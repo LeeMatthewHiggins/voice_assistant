@@ -66,8 +66,15 @@ public:
         
         // Build command with appropriate verbosity
         std::stringstream cmd;
-        cmd << config.executable
-            << " -f " << audio_file
+        
+        // If not in debug mode, use bash to redirect stderr to /dev/null
+        if (!debug) {
+            cmd << "bash -c '" << config.executable;
+        } else {
+            cmd << config.executable;
+        }
+        
+        cmd << " -f " << audio_file
             << " -m " << model_path
             << " -nt" // No timestamps
             << " -of txt"; // Explicitly set the output format to text
@@ -84,9 +91,9 @@ public:
             cmd << " " << config.params;
         }
         
-        // Add output redirection to suppress stderr if not in debug mode
+        // Close the bash command with stderr redirection if not in debug mode
         if (!debug) {
-            cmd << " 2>/dev/null";
+            cmd << " 2>/dev/null'";
         }
         
         if (debug) {
@@ -103,19 +110,9 @@ public:
         
         char temp_buffer[1024];
         while (fgets(temp_buffer, sizeof(temp_buffer), pipe) != NULL) {
-            std::string current_line(temp_buffer);
-            
-            // Skip timing lines and progress information in non-debug mode
-            if (!debug && (current_line.find("whisper_print_timings") != std::string::npos ||
-                          current_line.find("[") == 0 ||  // Progress bar usually starts with [
-                          current_line.find("Progress") != std::string::npos ||
-                          current_line.find("entropy") != std::string::npos)) {
-                continue;
-            }
-            
-            whisper_output += current_line;
+            whisper_output += temp_buffer;
             if (debug) {
-                std::cout << current_line; // Only print real-time output in debug mode
+                std::cout << temp_buffer; // Only print real-time output in debug mode
             }
         }
         
