@@ -23,7 +23,7 @@ public:
     }
     
     // Transcribe audio using whisper.cpp
-    std::string transcribe(const std::string& audio_file) {
+    std::string transcribe(const std::string& audio_file, bool debug = false) {
         // Check if whisper executable exists
         if (!fs::exists(config.executable)) {
             std::cerr << "Whisper executable not found at " << config.executable << std::endl;
@@ -47,7 +47,9 @@ public:
         std::streamsize size = file_check.tellg();
         file_check.close();
         
-        std::cout << "Audio file size: " << size << " bytes" << std::endl;
+        if (debug) {
+            std::cout << "Info: Audio file size: " << size << " bytes" << std::endl;
+        }
         if (size < 100) {
             std::cerr << "Error: Audio file is too small to contain speech" << std::endl;
             return "";
@@ -62,22 +64,30 @@ public:
             return "";
         }
         
-        // Build command with increased verbosity for debugging
+        // Build command with appropriate verbosity
         std::stringstream cmd;
         cmd << config.executable
             << " -f " << audio_file
             << " -m " << model_path
-            << " -of txt" // Explicitly set the output format to text
-            << " -pp" // Enable print progress
-            << " -ps" // Print special tokens
-            << " -pc"; // Print colors
+            << " -of txt"; // Explicitly set the output format to text
+            
+        // Only add verbose flags in debug mode
+        if (debug) {
+            cmd << " -pp" // Enable print progress
+                << " -ps" // Print special tokens
+                << " -pc"; // Print colors
+        } else {
+            cmd << " -nt"; // No timestamps in non-debug mode
+        }
             
         // Add any additional parameters
         if (!config.params.empty()) {
             cmd << " " << config.params;
         }
         
-        std::cout << "Transcribing with command: " << cmd.str() << std::endl;
+        if (debug) {
+            std::cout << "Info: Transcribing with command: " << cmd.str() << std::endl;
+        }
         
         // Execute command and capture output
         std::string whisper_output;
@@ -90,7 +100,9 @@ public:
         char temp_buffer[1024];
         while (fgets(temp_buffer, sizeof(temp_buffer), pipe) != NULL) {
             whisper_output += temp_buffer;
-            std::cout << temp_buffer; // Print real-time output
+            if (debug) {
+                std::cout << temp_buffer; // Only print real-time output in debug mode
+            }
         }
         
         int result = pclose(pipe);
@@ -101,7 +113,9 @@ public:
             return "";
         }
         
-        std::cout << "Parsing transcription from output..." << std::endl;
+        if (debug) {
+            std::cout << "Info: Parsing transcription from output..." << std::endl;
+        }
         
         // Parse the transcription directly from the console output
         std::string transcript;
@@ -128,7 +142,9 @@ public:
             while (!raw_text.empty() && std::isspace(raw_text.front())) raw_text.erase(0, 1);
             while (!raw_text.empty() && std::isspace(raw_text.back())) raw_text.pop_back();
             
-            std::cout << "Extracted transcription: \"" << raw_text << "\"" << std::endl;
+            if (debug) {
+                std::cout << "Info: Extracted transcription: \"" << raw_text << "\"" << std::endl;
+            }
             return raw_text;
         }
         
@@ -158,10 +174,12 @@ public:
         while (!transcript.empty() && std::isspace(transcript.front())) transcript.erase(0, 1);
         while (!transcript.empty() && std::isspace(transcript.back())) transcript.pop_back();
         
-        std::cout << "Extracted transcription from output: \"" << transcript << "\"" << std::endl;
+        if (debug) {
+            std::cout << "Info: Extracted transcription from output: \"" << transcript << "\"" << std::endl;
+        }
         
         if (transcript.empty()) {
-            std::cerr << "Could not find transcription in whisper output" << std::endl;
+            std::cerr << "Error: Could not find transcription in whisper output" << std::endl;
             return "";
         }
         

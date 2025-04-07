@@ -942,7 +942,7 @@ bool run_assistant_cycle(AudioInput* audio, WhisperSTT* whisper, OllamaClient* o
         
         // Transcribe audio
         std::cout << "Transcribing..." << std::endl;
-        std::string transcript = whisper->transcribe(audio_file);
+        std::string transcript = whisper->transcribe(audio_file, debug);
         bool has_speech = false;
         
         // Check if transcript is empty or a silence marker
