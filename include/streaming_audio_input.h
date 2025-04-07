@@ -21,6 +21,7 @@ struct VADParams {
     int min_speech_ms = 300;      // Minimum speech duration in ms to be considered valid
     int max_silence_ms = 1000;    // Maximum silence duration in ms before stopping capture
     int padding_ms = 500;         // Padding at the beginning and end of speech segments
+    int buffer_history_ms = 5000; // How much audio history to keep for context (5 seconds)
 };
 
 class StreamingAudioInput {

@@ -287,10 +287,20 @@ void StreamingAudioInput::capture_thread_func() {
             std::lock_guard<std::mutex> lock(buffer_mutex);
             capture_buffer.insert(capture_buffer.end(), float_buffer.begin(), float_buffer.end());
             
-            // Keep a reasonable size for the capture buffer (max 30 seconds)
-            const size_t max_buffer_size = rate * 30;
-            if (capture_buffer.size() > max_buffer_size) {
-                capture_buffer.erase(capture_buffer.begin(), capture_buffer.begin() + (capture_buffer.size() - max_buffer_size));
+            // Keep a reasonable size for the capture buffer based on buffer_history_ms
+            const size_t buffer_history_frames = (vad_params.buffer_history_ms * rate) / 1000;
+            if (capture_buffer.size() > buffer_history_frames) {
+                // Instead of removing entire excess, keep at least double the history
+                // This gives us plenty of context before speech starts
+                capture_buffer.erase(capture_buffer.begin(), 
+                                    capture_buffer.begin() + (capture_buffer.size() - buffer_history_frames));
+            }
+            
+            // Print capture buffer size periodically (every 200 buffers)
+            if (debug_enabled && buffer_count % 200 == 0) {
+                const float buffer_seconds = static_cast<float>(capture_buffer.size()) / rate;
+                std::cout << "Debug: Capture buffer size: " << capture_buffer.size() 
+                          << " samples (" << buffer_seconds << " seconds)" << std::endl;
             }
         }
         
@@ -319,11 +329,28 @@ void StreamingAudioInput::capture_thread_func() {
                     speech_detected.store(true);
                     was_speaking = true;
                     
-                    // When speech starts, grab audio from the beginning with padding
+                    // When speech starts, grab audio from the beginning with ample padding
                     std::lock_guard<std::mutex> lock(buffer_mutex);
+                    
+                    // Use more padding to ensure we capture the beginning of speech
+                    // Instead of just using padding_frames, use at least 50% of the available buffer
                     size_t padding_start = 0;
                     if (capture_buffer.size() > padding_frames) {
-                        padding_start = capture_buffer.size() - vad_window_size - padding_frames;
+                        // Use the larger of: specified padding OR half the available buffer
+                        size_t half_buffer = capture_buffer.size() / 2;
+                        size_t padding_frames_size = static_cast<size_t>(padding_frames);
+                        size_t extended_padding = (padding_frames_size > half_buffer) ? padding_frames_size : half_buffer;
+                        
+                        // But don't go beyond the buffer start
+                        if (extended_padding < capture_buffer.size()) {
+                            padding_start = capture_buffer.size() - extended_padding;
+                        }
+                    }
+                    
+                    // Log how much context we're including
+                    if (debug_enabled) {
+                        float context_seconds = static_cast<float>(padding_start) / rate;
+                        std::cout << "Debug: Including " << context_seconds << " seconds of audio context" << std::endl;
                     }
                     
                     // Start a new audio buffer from the padded point
@@ -343,10 +370,26 @@ void StreamingAudioInput::capture_thread_func() {
                         // When speech ends, include the silence as padding
                         {
                             std::lock_guard<std::mutex> lock(buffer_mutex);
-                            // Add the silence as padding
-                            audio_buffer.insert(audio_buffer.end(), 
-                                               capture_buffer.end() - silence_frames,
-                                               capture_buffer.end());
+                            
+                            // Add the silence as padding, but add even more for safety
+                            // We want to ensure we don't cut off any speech at the end
+                            size_t silence_padding = static_cast<size_t>(silence_frames + padding_frames);
+                            size_t available_padding = 0;
+                            if (capture_buffer.size() > audio_buffer.size()) {
+                                available_padding = capture_buffer.size() - audio_buffer.size();
+                            }
+                            size_t padding_to_add = (silence_padding < available_padding) ? silence_padding : available_padding;
+                            
+                            if (debug_enabled) {
+                                float padding_seconds = static_cast<float>(padding_to_add) / rate;
+                                std::cout << "Debug: Adding " << padding_seconds << " seconds of end padding" << std::endl;
+                            }
+                            
+                            if (padding_to_add > 0) {
+                                audio_buffer.insert(audio_buffer.end(), 
+                                                  capture_buffer.end() - padding_to_add,
+                                                  capture_buffer.end());
+                            }
                         }
                         
                         // Reset state
