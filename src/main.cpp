@@ -775,19 +775,25 @@ bool has_exit_keyword(const std::string& text) {
            (lower_text.find("end conversation") != std::string::npos);
 }
 
-// Check if transcript contains a silence marker
+// Check if transcript contains a silence marker or non-speech sounds
 bool is_silence_marker(const std::string& text) {
     // This pattern suggests whisper detected silence or very little speech
     std::string lower_text = text;
     std::transform(lower_text.begin(), lower_text.end(), lower_text.begin(), ::tolower);
     
+    // Trim whitespace from the string
+    lower_text.erase(0, lower_text.find_first_not_of(" \t\n\r\f\v"));
+    lower_text.erase(lower_text.find_last_not_of(" \t\n\r\f\v") + 1);
+    
     return lower_text.empty() || 
            lower_text == "." || 
            lower_text == "..." || 
-           lower_text == "[silence]" ||
-           lower_text == "[noise]" ||
-           lower_text == "[inaudible]" ||
-           lower_text == "[blank_audio]" ||
+           lower_text.find("[silence]") != std::string::npos ||
+           lower_text.find("[noise]") != std::string::npos ||
+           lower_text.find("[inaudible]") != std::string::npos ||
+           lower_text.find("[blank_audio]") != std::string::npos ||
+           lower_text.find("(") != std::string::npos || // Sound descriptions like (tapping)
+           lower_text.find("[") != std::string::npos || // Any bracketed content
            lower_text.find("background noise") != std::string::npos ||
            lower_text.find("silence") != std::string::npos;
 }
@@ -950,10 +956,20 @@ bool run_assistant_cycle(AudioInput* audio, WhisperSTT* whisper, OllamaClient* o
                 // Clearly log what was detected
                 if (transcript.empty()) {
                     std::cout << "Empty transcript. Continuing to listen..." << std::endl;
-                } else if (transcript == "[BLANK_AUDIO]" || transcript == "[blank_audio]") {
-                    std::cout << "Detected blank audio. Continuing to listen..." << std::endl;
                 } else {
-                    std::cout << "Detected only: '" << transcript << "'. Continuing to listen..." << std::endl;
+                    // Check if it's a specific kind of non-speech sound
+                    std::string lower_text = transcript;
+                    std::transform(lower_text.begin(), lower_text.end(), lower_text.begin(), ::tolower);
+                    
+                    if (lower_text.find("[blank_audio]") != std::string::npos) {
+                        std::cout << "Detected blank audio. Continuing to listen..." << std::endl;
+                    } else if (lower_text.find("[") != std::string::npos) {
+                        std::cout << "Detected markup: '" << transcript << "'. Continuing to listen..." << std::endl;
+                    } else if (lower_text.find("(") != std::string::npos) {
+                        std::cout << "Detected sound: '" << transcript << "'. Continuing to listen..." << std::endl;
+                    } else {
+                        std::cout << "Detected only: '" << transcript << "'. Continuing to listen..." << std::endl;
+                    }
                 }
                 
                 // Count consecutive silent turns
