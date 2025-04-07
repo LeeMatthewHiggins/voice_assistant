@@ -361,10 +361,21 @@ void StreamingAudioInput::capture_thread_func() {
                 silence_frames += err;
                 
                 if (was_speaking) {
-                    if (silence_frames >= max_silence_frames) {
+                    // Check if silence has been detected for max_silence_ms milliseconds
+                    // Or if silence detected after at least 1 second of speech
+                    bool long_enough_speech = speech_frames > rate; // At least 1 second of speech
+                    bool silence_detected = silence_frames >= max_silence_frames;
+                    bool speech_followed_by_short_silence = long_enough_speech && silence_frames >= (max_silence_frames / 3);
+                    
+                    if (silence_detected || speech_followed_by_short_silence) {
                         // Speech end detected
                         if (debug_enabled) {
-                            std::cout << "Info: Speech ended after " << speech_frames * 1000 / rate << " ms" << std::endl;
+                            std::cout << "Info: Speech ended after " << speech_frames * 1000 / rate << " ms "
+                                      << "(silence: " << silence_frames * 1000 / rate << " ms)" << std::endl;
+                            
+                            if (speech_followed_by_short_silence && !silence_detected) {
+                                std::cout << "Info: Detected end of speech due to short silence after long speech" << std::endl;
+                            }
                         }
                         
                         // When speech ends, include the silence as padding
