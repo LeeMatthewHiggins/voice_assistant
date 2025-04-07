@@ -35,8 +35,12 @@ inline bool detect_voice_activity(const std::vector<float>& audio, int sample_ra
     printf("VAD: Energy: %.6f (threshold: %.6f), Frequency: %.1f Hz (threshold: %.1f)\n", 
            energy, threshold, freq, freq_threshold);
     
+    // For very quiet microphones, boost energy if needed
+    const float min_detection = 0.0001f; // Ultra-sensitive minimum
+    
     // Return true if energy is above threshold and frequency is reasonable for speech
-    return energy > threshold && freq > freq_threshold;
+    // For environments with low volume, we'll just use the frequency check
+    return (energy > threshold || energy > min_detection) && freq > freq_threshold;
 }
 
 #endif // VAD_H

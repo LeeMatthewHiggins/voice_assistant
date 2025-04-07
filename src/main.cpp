@@ -55,7 +55,8 @@ bool has_over_keyword(const std::string& text);
 bool run_streaming_assistant_cycle(StreamingAudioInput* audio, StreamingWhisperSTT* whisper, OllamaClient* ollama, TTSEngine* tts, bool debug, const std::string& log_file) {
     bool should_exit = false;
     int silence_counter = 0;
-    const int max_silence_turns = 3; // Exit after this many consecutive silent turns
+    const int max_silence_turns = 5; // Exit after this many consecutive silent turns
+    bool continuous_mode = true; // Always run in continuous mode for streaming
     
     // Make sure the audio capture is started
     if (!audio->start()) {
@@ -66,11 +67,13 @@ bool run_streaming_assistant_cycle(StreamingAudioInput* audio, StreamingWhisperS
     // Pass the running flag pointer to the whisper engine for interrupt handling
     whisper->set_running_flag(&g_running);
     
+    std::cout << "\nStarting streaming voice assistant. Speak to begin." << std::endl;
+    
     while (g_running && !should_exit) {
         std::cout << "\nListening... (press Ctrl+C to stop)" << std::endl;
         
         // Wait for speech with a timeout
-        std::vector<float> speech_audio = audio->wait_for_speech(10000); // 10 second timeout
+        std::vector<float> speech_audio = audio->wait_for_speech(20000); // 20 second timeout
         
         // Check if the global running flag was set to 0 by the signal handler
         if (!g_running) {
@@ -84,7 +87,7 @@ bool run_streaming_assistant_cycle(StreamingAudioInput* audio, StreamingWhisperS
             
             // Count consecutive silent turns
             silence_counter++;
-            if (silence_counter >= max_silence_turns) {
+            if (silence_counter >= max_silence_turns && !continuous_mode) {
                 std::cout << "Multiple silent turns detected. Ending conversation." << std::endl;
                 audio->stop();
                 break;
@@ -96,6 +99,9 @@ bool run_streaming_assistant_cycle(StreamingAudioInput* audio, StreamingWhisperS
         // Reset the silence counter since we detected speech
         silence_counter = 0;
         
+        // Stop audio capture temporarily during processing to avoid interference
+        audio->stop();
+        
         // Process the audio with whisper
         std::cout << "Transcribing..." << std::endl;
         std::string transcript = whisper->process_audio(speech_audio, audio->get_sample_rate());
@@ -103,13 +109,14 @@ bool run_streaming_assistant_cycle(StreamingAudioInput* audio, StreamingWhisperS
         // Check again after transcription in case Ctrl+C was pressed during processing
         if (!g_running) {
             std::cout << "Ctrl+C detected. Exiting..." << std::endl;
-            audio->stop();
             return true; // Signal that the app should exit
         }
         
         // Check if transcript is empty or a silence marker
         if (transcript.empty() || is_silence_marker(transcript)) {
             std::cout << "Empty transcript or silence marker detected. Continuing to listen..." << std::endl;
+            // Restart audio capture for next turn
+            audio->start();
             continue;
         }
         
@@ -176,11 +183,13 @@ bool run_streaming_assistant_cycle(StreamingAudioInput* audio, StreamingWhisperS
         }
         tts->speak(response);
         
-        // Check if the user said "over" to indicate conversation should continue
-        if (!has_over_keyword(transcript)) {
-            // If no "over" was detected, end the conversation (unless in continuous mode)
-            should_exit = true;
-        }
+        // Restart audio capture for next turn
+        // We do this AFTER the TTS is done speaking to avoid capturing the assistant's own speech
+        std::cout << "Ready for next input..." << std::endl;
+        audio->start();
+        
+        // In streaming mode, always continue unless exit keyword
+        should_exit = false;
         
         // Small delay before next cycle
         // Check for interrupt during the delay

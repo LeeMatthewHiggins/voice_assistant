@@ -22,10 +22,10 @@
   },
   "streaming": {
     "enabled": true,
-    "vad_threshold": 0.0005,
-    "vad_freq_threshold": 50.0,
-    "min_speech_ms": 200,
-    "max_silence_ms": 1500,
-    "padding_ms": 800
+    "vad_threshold": 0.0001,
+    "vad_freq_threshold": 30.0,
+    "min_speech_ms": 150,
+    "max_silence_ms": 3000,
+    "padding_ms": 1000
   }
 }
