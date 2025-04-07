@@ -307,8 +307,8 @@ void StreamingAudioInput::capture_thread_func() {
         // Add to VAD buffer for speech detection
         vad_buffer.insert(vad_buffer.end(), float_buffer.begin(), float_buffer.end());
         
-        // Process VAD on a 200ms window
-        const size_t vad_window_size = rate / 5; // 200ms
+        // Process VAD on a 500ms window for better speech detection
+        const size_t vad_window_size = rate / 2; // 500ms for better speech detection
         if (vad_buffer.size() >= vad_window_size) {
             // Process a sliding window for VAD
             std::vector<float> vad_window(vad_buffer.end() - vad_window_size, vad_buffer.end());

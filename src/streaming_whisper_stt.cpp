@@ -2,6 +2,7 @@
 #include <iostream>
 #include <filesystem>
 #include <cstring>
+#include <cctype>  // For std::isspace
 #include <whisper.h>
 
 namespace fs = std::filesystem;
@@ -95,13 +96,20 @@ std::string StreamingWhisperSTT::process_audio(const std::vector<float>& audio_b
     }
     
     // Set up whisper parameters
-    whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
     wparams.print_realtime = false;
     wparams.print_progress = debug_enabled;
     wparams.print_timestamps = false;
     wparams.translate = false;
     wparams.language = "en"; // Language code for English
     wparams.n_threads = 4;   // Use 4 threads for processing
+    
+    // Enhance parameters for better sentence detection
+    wparams.beam_search.beam_size = 5;        // Increase beam size for better search
+    wparams.no_context = false;               // Use context for better continuity
+    wparams.single_segment = true;            // Treat as a single segment
+    wparams.max_len = 0;                      // No length limit on transcription
+    wparams.temperature = 0.0f;               // Use greedy decoding for more accuracy
     
     // Parse any additional parameters from config
     if (!config.params.empty()) {
@@ -148,11 +156,40 @@ std::string StreamingWhisperSTT::process_audio(const std::vector<float>& audio_b
     
     // Extract the transcription text from all segments
     std::string result;
+    
+    // Log how many segments we found
+    if (debug_enabled) {
+        std::cout << "Debug: Whisper found " << n_segments << " segment(s)" << std::endl;
+    }
+    
+    // Join all segments into one complete transcript
     for (int i = 0; i < n_segments; i++) {
         const char* text = whisper_full_get_segment_text(ctx, i);
-        result += text;
-        if (i < n_segments - 1) {
-            result += " ";
+        
+        // Log each segment separately for debugging
+        if (debug_enabled) {
+            std::cout << "Debug: Segment " << i << ": \"" << text << "\"" << std::endl;
+        }
+        
+        // Check if this segment has non-whitespace content 
+        std::string segment_text = text;
+        bool has_content = false;
+        for (char c : segment_text) {
+            if (!std::isspace(c)) {
+                has_content = true;
+                break;
+            }
+        }
+        
+        // Only add non-empty segments
+        if (has_content) {
+            result += text;
+            
+            // Add space between segments if needed
+            if (i < n_segments - 1 && !segment_text.empty() && 
+                segment_text.back() != ' ' && segment_text.back() != '\n') {
+                result += " ";
+            }
         }
     }
     
