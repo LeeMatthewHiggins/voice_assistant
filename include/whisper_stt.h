@@ -6,6 +6,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <filesystem>
+#include <sys/wait.h>
 #include "config.h"
 
 namespace fs = std::filesystem;
@@ -118,13 +119,28 @@ public:
         
         int result = pclose(pipe);
         
+        // Check if process was terminated by a signal
+        if (WIFSIGNALED(result)) {
+            int signal = WTERMSIG(result);
+            std::cout << "Whisper process terminated by signal: " << signal << std::endl;
+            
+            // If terminated by SIGINT or SIGTERM, we should exit
+            if (signal == SIGINT || signal == SIGTERM) {
+                std::cout << "Transcription interrupted by termination signal." << std::endl;
+                // Also set the running flag to false if provided
+                if (running_flag) *running_flag = 0;
+                return "";
+            }
+        }
+        
         // Check if we've been interrupted (if running_flag was provided)
         if (running_flag && !(*running_flag)) {
             std::cout << "Transcription interrupted by Ctrl+C." << std::endl;
             return "";
         }
         
-        if (result != 0) {
+        // Check for other errors
+        if (result != 0 && !WIFSIGNALED(result)) {
             std::cerr << "Error running whisper.cpp (exit code: " << result << ")" << std::endl;
             std::cerr << "Whisper output: " << whisper_output << std::endl;
             return "";
