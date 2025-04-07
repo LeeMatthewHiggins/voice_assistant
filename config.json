@@ -1,0 +1,31 @@
+{
+  "audio": {
+    "device": "default",
+    "duration": 5,
+    "sample_rate": 16000
+  },
+  "ollama": {
+    "host": "http://localhost:11434",
+    "model": "gemma3:1b",
+    "system_prompt": "You are a motivational life coach focused on personal development and achieving goals. You ask insightful questions to promote self-reflection and provide actionable advice. You're encouraging but also challenging, helping to identify limiting beliefs and overcome obstacles. You focus on practical steps toward personal growth. Keep your responses short, conversational, and suitable for speech. Avoid using markdown, code blocks, bullets, or other formatting. Use complete sentences with natural pauses. Speak as you would in a real coaching session."
+  },
+  "tts": {
+    "engine": "espeak",
+    "output_device": "default",
+    "speed": 150,
+    "voice": "en-us"
+  },
+  "whisper": {
+    "executable": "./whisper.cpp/build/bin/whisper-cli",
+    "model": "base.en",
+    "params": "-l en --no-timestamps"
+  },
+  "streaming": {
+    "enabled": true,
+    "vad_threshold": 0.0005,
+    "vad_freq_threshold": 50.0,
+    "min_speech_ms": 200,
+    "max_silence_ms": 1500,
+    "padding_ms": 800
+  }
+}

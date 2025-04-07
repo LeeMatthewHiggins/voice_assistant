@@ -137,9 +137,12 @@ void StreamingAudioInput::capture_thread_func() {
     // Open ALSA device for capture
     if ((err = snd_pcm_open(&pcm_handle, config.device.c_str(), SND_PCM_STREAM_CAPTURE, 0)) < 0) {
         std::cerr << "Error: Cannot open audio device " << config.device << ": " << snd_strerror(err) << std::endl;
+        std::cerr << "Hint: You may need to adjust the audio.device in config.json or use --input-device" << std::endl;
         is_capturing.store(false);
         return;
     }
+    
+    std::cout << "Debug: Successfully opened audio device: " << config.device << std::endl;
     
     // Set hardware parameters
     snd_pcm_hw_params_t* hw_params;
@@ -154,6 +157,7 @@ void StreamingAudioInput::capture_thread_func() {
         is_capturing.store(false);
         return;
     }
+    std::cout << "Debug: Set access type to interleaved" << std::endl;
     
     // Set sample format (16-bit signed little endian)
     err = snd_pcm_hw_params_set_format(pcm_handle, hw_params, SND_PCM_FORMAT_S16_LE);
@@ -163,15 +167,23 @@ void StreamingAudioInput::capture_thread_func() {
         is_capturing.store(false);
         return;
     }
+    std::cout << "Debug: Set sample format to 16-bit signed little endian" << std::endl;
     
     // Set sample rate
     unsigned int rate = static_cast<unsigned int>(config.sample_rate);
+    unsigned int original_rate = rate;
     err = snd_pcm_hw_params_set_rate_near(pcm_handle, hw_params, &rate, 0);
     if (err < 0) {
         std::cerr << "Error: Cannot set sample rate: " << snd_strerror(err) << std::endl;
         snd_pcm_close(pcm_handle);
         is_capturing.store(false);
         return;
+    }
+    
+    if (rate != original_rate) {
+        std::cout << "Debug: Requested sample rate " << original_rate << " Hz, but got " << rate << " Hz" << std::endl;
+    } else {
+        std::cout << "Debug: Set sample rate to " << rate << " Hz" << std::endl;
     }
     
     // Set channels (mono)
@@ -182,6 +194,7 @@ void StreamingAudioInput::capture_thread_func() {
         is_capturing.store(false);
         return;
     }
+    std::cout << "Debug: Set channels to mono (1 channel)" << std::endl;
     
     // Set buffer size (100ms worth of samples)
     snd_pcm_uframes_t buffer_size = rate / 10;
@@ -228,16 +241,21 @@ void StreamingAudioInput::capture_thread_func() {
     int max_silence_frames = vad_params.max_silence_ms * rate / 1000; // Maximum silence duration
     
     // Main capture loop
+    std::cout << "Debug: Starting audio capture loop" << std::endl;
+    int buffer_count = 0;
     while (is_capturing.load() && g_running) {
         // Read audio data from device
         err = snd_pcm_readi(pcm_handle, pcm_buffer.data(), frames_per_chunk);
         
+        // Every 100 buffers (10 seconds at 100ms buffers), print an info message
+        if (++buffer_count % 100 == 0) {
+            std::cout << "Debug: Still capturing audio, processed " << buffer_count << " buffers" << std::endl;
+        }
+        
         if (err == -EPIPE) {
             // Underrun occurred, recover
             snd_pcm_prepare(pcm_handle);
-            if (debug_enabled) {
-                std::cerr << "Warning: Buffer underrun occurred" << std::endl;
-            }
+            std::cerr << "Warning: Buffer underrun occurred" << std::endl;
             continue;
         } else if (err < 0) {
             // Other error
@@ -245,8 +263,16 @@ void StreamingAudioInput::capture_thread_func() {
             break;
         } else if (err != frames_per_chunk) {
             // Partial read
-            if (debug_enabled) {
-                std::cerr << "Warning: Partial read, only got " << err << " frames" << std::endl;
+            std::cerr << "Warning: Partial read, only got " << err << " frames" << std::endl;
+        } else {
+            if (debug_enabled && buffer_count % 50 == 0) {
+                // Calculate peak amplitude of this buffer
+                float peak = 0.0f;
+                for (int i = 0; i < err; i++) {
+                    float sample = std::abs(pcm_buffer[i]) / 32768.0f;
+                    if (sample > peak) peak = sample;
+                }
+                std::cout << "Debug: Successfully read " << err << " frames, peak amplitude: " << peak << std::endl;
             }
         }
         

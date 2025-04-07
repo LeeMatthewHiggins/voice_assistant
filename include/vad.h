@@ -31,8 +31,9 @@ inline bool detect_voice_activity(const std::vector<float>& audio, int sample_ra
     float duration = static_cast<float>(audio.size()) / sample_rate;
     float freq = zero_crossings / (2 * duration);
     
-    // Debug output
-    // printf("Energy: %.6f, Frequency: %.1f Hz\n", energy, freq);
+    // Debug output - always print to help diagnose issues
+    printf("VAD: Energy: %.6f (threshold: %.6f), Frequency: %.1f Hz (threshold: %.1f)\n", 
+           energy, threshold, freq, freq_threshold);
     
     // Return true if energy is above threshold and frequency is reasonable for speech
     return energy > threshold && freq > freq_threshold;
