@@ -71,6 +71,34 @@ void StreamingWhisperSTT::cleanup() {
     is_initialized = false;
 }
 
+// Simple linear resampling function
+std::vector<float> resample_audio(const std::vector<float>& input, int input_rate, int output_rate) {
+    if (input_rate == output_rate) {
+        return input;
+    }
+    
+    double ratio = static_cast<double>(output_rate) / input_rate;
+    size_t output_size = static_cast<size_t>(input.size() * ratio);
+    std::vector<float> output(output_size);
+    
+    for (size_t i = 0; i < output_size; i++) {
+        double input_idx = i / ratio;
+        size_t idx = static_cast<size_t>(input_idx);
+        double frac = input_idx - idx;
+        
+        if (idx + 1 < input.size()) {
+            // Linear interpolation
+            output[i] = input[idx] * (1.0 - frac) + input[idx + 1] * frac;
+        } else if (idx < input.size()) {
+            output[i] = input[idx];
+        } else {
+            output[i] = 0.0f;
+        }
+    }
+    
+    return output;
+}
+
 // Process audio buffer
 std::string StreamingWhisperSTT::process_audio(const std::vector<float>& audio_buffer, int sample_rate) {
     if (!is_initialized) {
@@ -91,8 +119,40 @@ std::string StreamingWhisperSTT::process_audio(const std::vector<float>& audio_b
         return "";
     }
     
+    // Check and convert sample rate if needed
+    // Whisper expects 16kHz mono audio
+    std::vector<float> processed_audio;
+    if (sample_rate != 16000) {
+        if (debug_enabled) {
+            std::cout << "Warning: Sample rate " << sample_rate << " Hz doesn't match Whisper's expected 16kHz" << std::endl;
+            std::cout << "Info: Performing simple resampling" << std::endl;
+        }
+        
+        // Resample to 16kHz (what Whisper expects)
+        processed_audio = resample_audio(audio_buffer, sample_rate, 16000);
+    } else {
+        // No resampling needed
+        processed_audio = audio_buffer;
+    }
+    
     if (debug_enabled) {
-        std::cout << "Info: Processing " << audio_buffer.size() << " audio samples with Whisper" << std::endl;
+        std::cout << "Info: Processing " << processed_audio.size() << " audio samples with Whisper" << std::endl;
+        
+        // Print some stats about the audio
+        float max_amplitude = 0.0f;
+        float avg_amplitude = 0.0f;
+        for (float sample : processed_audio) {
+            float abs_sample = std::abs(sample);
+            if (abs_sample > max_amplitude) max_amplitude = abs_sample;
+            avg_amplitude += abs_sample;
+        }
+        
+        if (!processed_audio.empty()) {
+            avg_amplitude /= processed_audio.size();
+        }
+        
+        std::cout << "Debug: Audio stats - Max amplitude: " << max_amplitude 
+                  << ", Avg amplitude: " << avg_amplitude << std::endl;
     }
     
     // Set up whisper parameters
@@ -131,7 +191,7 @@ std::string StreamingWhisperSTT::process_audio(const std::vector<float>& audio_b
     }
     
     // Run whisper processing
-    if (whisper_full(ctx, wparams, audio_buffer.data(), audio_buffer.size()) != 0) {
+    if (whisper_full(ctx, wparams, processed_audio.data(), processed_audio.size()) != 0) {
         std::cerr << "Error: Failed to process audio with whisper" << std::endl;
         is_processing.store(false);
         return "";
