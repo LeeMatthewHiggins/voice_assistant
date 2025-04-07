@@ -785,17 +785,76 @@ bool is_silence_marker(const std::string& text) {
     lower_text.erase(0, lower_text.find_first_not_of(" \t\n\r\f\v"));
     lower_text.erase(lower_text.find_last_not_of(" \t\n\r\f\v") + 1);
     
-    return lower_text.empty() || 
-           lower_text == "." || 
-           lower_text == "..." || 
-           lower_text.find("[silence]") != std::string::npos ||
-           lower_text.find("[noise]") != std::string::npos ||
-           lower_text.find("[inaudible]") != std::string::npos ||
-           lower_text.find("[blank_audio]") != std::string::npos ||
-           lower_text.find("(") != std::string::npos || // Sound descriptions like (tapping)
-           lower_text.find("[") != std::string::npos || // Any bracketed content
-           lower_text.find("background noise") != std::string::npos ||
-           lower_text.find("silence") != std::string::npos;
+    // Special patterns that should be detected as silence
+    static const std::vector<std::string> silence_markers = {
+        "[silence]", 
+        "[noise]", 
+        "[inaudible]", 
+        "[blank_audio]",
+        "[applause]",
+        "[music]",
+        "[laughter]",
+        "background noise",
+        "silence"
+    };
+    
+    // Check for empty transcript or simple markers
+    if (lower_text.empty() || lower_text == "." || lower_text == "...") {
+        return true;
+    }
+    
+    // Check for specific silence markers
+    for (const auto& marker : silence_markers) {
+        if (lower_text.find(marker) != std::string::npos) {
+            return true;
+        }
+    }
+    
+    // Check for parenthetical descriptions - but only if they make up the whole text
+    // This avoids filtering out valid speech that might contain parentheses
+    if (lower_text.front() == '(' && lower_text.back() == ')') {
+        return true;
+    }
+    
+    // Only filter bracketed content if it makes up the whole text or most of it
+    if (lower_text.front() == '[' && lower_text.back() == ']') {
+        return true;
+    }
+    
+    // If it has brackets or parentheses but also has substantial text outside them
+    // (more than 5 characters), then it's probably valid speech
+    if ((lower_text.find('[') != std::string::npos && lower_text.find(']') != std::string::npos) ||
+        (lower_text.find('(') != std::string::npos && lower_text.find(')') != std::string::npos)) {
+        // Extract text outside of brackets/parentheses
+        std::string text_outside = lower_text;
+        // Remove text between [] brackets
+        while (true) {
+            size_t start = text_outside.find('[');
+            size_t end = text_outside.find(']');
+            if (start == std::string::npos || end == std::string::npos || start > end) {
+                break;
+            }
+            text_outside.erase(start, end - start + 1);
+        }
+        // Remove text between () parentheses
+        while (true) {
+            size_t start = text_outside.find('(');
+            size_t end = text_outside.find(')');
+            if (start == std::string::npos || end == std::string::npos || start > end) {
+                break;
+            }
+            text_outside.erase(start, end - start + 1);
+        }
+        
+        // Trim again after removing brackets
+        text_outside.erase(0, text_outside.find_first_not_of(" \t\n\r\f\v"));
+        text_outside.erase(text_outside.find_last_not_of(" \t\n\r\f\v") + 1);
+        
+        // If there's substantial text outside brackets/parentheses, it's not silence
+        return text_outside.length() < 5;
+    }
+    
+    return false;
 }
 
 // Process a single transcript and return true if conversation should continue
