@@ -269,28 +269,30 @@ int main(int argc, char** argv) {
     std::cout << "\nSystem Information:\n" << system_info_str << std::endl;
     
     // Initialize components
-    std::unique_ptr<AudioInput> audio = std::make_unique<AudioInput>(config.audio, continuous_mode);
+    std::unique_ptr<AudioInput> audio = std::make_unique<AudioInput>(config.audio, continuous_mode, debug_mode);
     std::unique_ptr<WhisperSTT> whisper = std::make_unique<WhisperSTT>(config.whisper);
     std::unique_ptr<OllamaClient> ollama = std::make_unique<OllamaClient>(config.ollama, system_info_str);
     std::unique_ptr<TTSEngine> tts = std::make_unique<TTSEngine>(config.tts);
     
-    std::cout << "Vibe Voice Assistant Configuration:" << std::endl;
-    std::cout << "- Speech recognition: Whisper (" << config.whisper.model << " model)" << std::endl;
-    std::cout << "- Language processing: Ollama (" << config.ollama.model << " model)" << std::endl;
-    std::cout << "- Speech synthesis: " << config.tts.engine << " (voice: " << config.tts.voice << ")" << std::endl;
-    std::cout << "- Audio input device: " << config.audio.device << std::endl;
-    std::cout << "- Audio output device: " << config.tts.output_device << std::endl;
-    std::cout << "- Current time: " << config.system_info.current_time << std::endl;
-    
-    // Display hardware info
-    if (!config.system_info.cpu_info.empty()) 
-        std::cout << "- CPU: " << config.system_info.cpu_info << std::endl;
-    if (!config.system_info.gpu_info.empty()) 
-        std::cout << "- GPU: " << config.system_info.gpu_info << std::endl;
-    if (!config.system_info.memory_info.empty()) 
-        std::cout << "- Memory: " << config.system_info.memory_info << std::endl;
-    if (!config.system_info.disk_info.empty()) 
-        std::cout << "- Disk: " << config.system_info.disk_info << std::endl;
+    if (debug_mode) {
+        std::cout << "Info: Vibe Voice Assistant Configuration:" << std::endl;
+        std::cout << "Info: - Speech recognition: Whisper (" << config.whisper.model << " model)" << std::endl;
+        std::cout << "Info: - Language processing: Ollama (" << config.ollama.model << " model)" << std::endl;
+        std::cout << "Info: - Speech synthesis: " << config.tts.engine << " (voice: " << config.tts.voice << ")" << std::endl;
+        std::cout << "Info: - Audio input device: " << config.audio.device << std::endl;
+        std::cout << "Info: - Audio output device: " << config.tts.output_device << std::endl;
+        std::cout << "Info: - Current time: " << config.system_info.current_time << std::endl;
+        
+        // Display hardware info
+        if (!config.system_info.cpu_info.empty()) 
+            std::cout << "Info: - CPU: " << config.system_info.cpu_info << std::endl;
+        if (!config.system_info.gpu_info.empty()) 
+            std::cout << "Info: - GPU: " << config.system_info.gpu_info << std::endl;
+        if (!config.system_info.memory_info.empty()) 
+            std::cout << "Info: - Memory: " << config.system_info.memory_info << std::endl;
+        if (!config.system_info.disk_info.empty()) 
+            std::cout << "Info: - Disk: " << config.system_info.disk_info << std::endl;
+    }
     
     // If we just wanted to list devices, exit now
     if (list_devices) {
@@ -311,13 +313,16 @@ int main(int argc, char** argv) {
     
     // Main loop
     if (continuous_mode) {
-        std::cout << "Running in continuous mode. Press Ctrl+C to exit or say 'exit', 'quit', 'goodbye', or 'end conversation'." << std::endl;
+        std::cout << "Info: Running in continuous mode. Press Ctrl+C to exit or say 'exit', 'quit', 'goodbye', or 'end conversation'." << std::endl;
+        std::cout << "\n--- Starting Conversation ---\n" << std::endl;
         
         bool should_exit = false;
         while (g_running && !should_exit) {
             should_exit = run_assistant_cycle(audio.get(), whisper.get(), ollama.get(), tts.get(), debug_mode);
         }
     } else {
+        std::cout << "Info: Press Ctrl+C to exit or say 'exit', 'quit', 'goodbye', or 'end conversation'." << std::endl;
+        std::cout << "\n--- Starting Conversation ---\n" << std::endl;
         run_assistant_cycle(audio.get(), whisper.get(), ollama.get(), tts.get(), debug_mode);
     }
     
@@ -791,7 +796,7 @@ bool process_transcript(const std::string& transcript, OllamaClient* ollama, TTS
     // Safety check: We should never process silence markers or empty transcripts
     if (transcript.empty() || is_silence_marker(transcript)) {
         if (debug) {
-            std::cout << "Debug: Empty or silence transcript passed to process_transcript. Skipping processing." << std::endl;
+            std::cout << "Info: Empty or silence transcript passed to process_transcript. Skipping processing." << std::endl;
         }
         return true; // Continue listening without responding
     }
@@ -808,16 +813,19 @@ bool process_transcript(const std::string& transcript, OllamaClient* ollama, TTS
     }
 
     // Process with Ollama
-    std::cout << "Processing with Ollama..." << std::endl;
+    if (debug) {
+        std::cout << "Info: Processing with Ollama..." << std::endl;
+    }
     std::string response = ollama->process(clean_transcript);
-    std::cout << "Assistant: " << response << std::endl;
+    
+    // Display output in chat format
+    std::cout << "Vibe: " << response << std::endl;
     
     // Convert to speech
-    std::cout << "Converting to speech..." << std::endl;
+    if (debug) {
+        std::cout << "Info: Converting to speech..." << std::endl;
+    }
     tts->speak(response);
-    
-    // Add "over" to signal end of assistant's turn
-    std::cout << "Over." << std::endl;
     
     // Check if the user said "over" to indicate conversation should continue
     return has_over_keyword(transcript);

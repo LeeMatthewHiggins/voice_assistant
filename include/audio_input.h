@@ -18,6 +18,7 @@ class AudioInput {
 private:
     AudioConfig config;
     bool continuous_mode;
+    bool debug_enabled = false;
     
     // List available audio devices
     void list_devices() {
@@ -31,8 +32,8 @@ private:
     }
     
 public:
-    AudioInput(const AudioConfig& cfg, bool continuous = false) 
-        : config(cfg), continuous_mode(continuous) {
+    AudioInput(const AudioConfig& cfg, bool continuous = false, bool debug = false) 
+        : config(cfg), continuous_mode(continuous), debug_enabled(debug) {
         // If the user requested "list" as the device, show available devices
         if (config.device == "list") {
             list_devices();
@@ -67,13 +68,16 @@ public:
         std::stringstream cmd;
         bool using_pulse = false;
         
-        std::cout << "Recording with device: " << config.device << std::endl;
-        std::cout << "Sample rate: " << config.sample_rate << " Hz" << std::endl;
-        std::cout << "Duration: " << config.duration << " seconds" << std::endl;
-        std::cout << "Press Ctrl+C to stop..." << std::endl;
+        if (debug_enabled) {
+            std::cout << "Info: Recording with device: " << config.device << std::endl;
+            std::cout << "Info: Sample rate: " << config.sample_rate << " Hz" << std::endl;
+            std::cout << "Info: Duration: " << config.duration << " seconds" << std::endl;
+        }
         
         // Use ALSA for recording by default (most reliable)
-        std::cout << "Using ALSA for recording..." << std::endl;
+        if (debug_enabled) {
+            std::cout << "Info: Using ALSA for recording..." << std::endl;
+        }
         cmd.str("");
         cmd << "arecord"
             << " -D " << config.device
@@ -81,25 +85,29 @@ public:
             << " -c 1"
             << " -r " << config.sample_rate
             << " -d " << config.duration
-            << " -v" // Verbose mode for debugging
+            << (debug_enabled ? " -v" : " -q") // Verbose only in debug mode
             << " " << output_file;
         
         // Print the command for debugging
-        std::cout << "Executing: " << cmd.str() << std::endl;
+        if (debug_enabled) {
+            std::cout << "Info: Executing: " << cmd.str() << std::endl;
+        }
         
         // Execute command
         int result = std::system(cmd.str().c_str());
         
         // Check if interrupted by Ctrl+C
         if (!g_running) {
-            std::cout << "Recording was interrupted by Ctrl+C." << std::endl;
+            if (debug_enabled) {
+                std::cout << "Info: Recording was interrupted by Ctrl+C." << std::endl;
+            }
             // Clean up any partial recording
             std::remove(output_file.c_str());
             return "";
         }
         
         if (result != 0) {
-            std::cerr << "First recording attempt failed with exit code: " << result << std::endl;
+            std::cerr << "Error: Recording failed with exit code: " << result << std::endl;
             
             // If first attempt fails, try alternative approach
             cmd.str("");

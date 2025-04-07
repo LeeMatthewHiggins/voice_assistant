@@ -173,9 +173,6 @@ public:
         CURLcode res;
         std::string readBuffer;
         
-        std::cout << "Connecting to Ollama at " << config.host << std::endl;
-        std::cout << "Using model: " << config.model << std::endl;
-        
         // Create CURL handle
         curl = curl_easy_init();
         if (!curl) {
@@ -231,9 +228,6 @@ public:
         // Convert to string
         std::string json_data = request_json.dump();
         
-        std::cout << "Sending request to Ollama API..." << std::endl;
-        std::cout << "Request body: " << json_data << std::endl;
-        
         // Set data to send
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data.c_str());
         
@@ -275,8 +269,6 @@ public:
         curl_easy_cleanup(curl);
         curl_slist_free_all(headers);
         
-        std::cout << "Received response from Ollama (HTTP " << http_code << ")" << std::endl;
-        
         // Process response
         if (http_code == 200 && !readBuffer.empty()) {
             // Parse JSON response
@@ -284,16 +276,13 @@ public:
                 nlohmann::json response = nlohmann::json::parse(readBuffer);
                 if (response.contains("response")) {
                     std::string resp_text = response["response"];
-                    std::cout << "Ollama response length: " << resp_text.length() << " characters" << std::endl;
                     
                     // Process the response for TTS friendliness
                     std::string processed_text = process_text_for_tts(resp_text);
-                    std::cout << "Processed response length: " << processed_text.length() << " characters" << std::endl;
                     
                     // Only add to conversation history if there was actual speech and a valid response
                     if (!text.empty() && !resp_text.empty()) {
                         conversation_history.push_back(std::make_pair(text, resp_text));
-                        std::cout << "Conversation history now has " << conversation_history.size() << " turns" << std::endl;
                     }
                     
                     return processed_text;
