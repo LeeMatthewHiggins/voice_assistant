@@ -135,6 +135,41 @@ std::string StreamingWhisperSTT::process_audio(const std::vector<float>& audio_b
         processed_audio = audio_buffer;
     }
     
+    // Add significant silence padding (3 seconds) at the end to help Whisper detect the end of sentences
+    const int padding_samples = 16000 * 3; // 3 seconds of silence at 16kHz
+    std::vector<float> padded_audio(processed_audio.size() + padding_samples);
+    
+    // Copy the original audio
+    std::copy(processed_audio.begin(), processed_audio.end(), padded_audio.begin());
+    
+    // Set the padding to zero (silence)
+    std::fill(padded_audio.begin() + processed_audio.size(), padded_audio.end(), 0.0f);
+    
+    // Boost the audio signal to improve detection
+    // Find the max amplitude to normalize
+    float max_amplitude = 0.0f;
+    for (float sample : processed_audio) {
+        float abs_sample = std::abs(sample);
+        if (abs_sample > max_amplitude) max_amplitude = abs_sample;
+    }
+    
+    // If audio is very quiet, apply gain
+    if (max_amplitude > 0.0f && max_amplitude < 0.1f) {
+        float gain = 0.8f / max_amplitude; // Boost to 80% of maximum
+        if (debug_enabled) {
+            std::cout << "Debug: Audio is quiet (max amplitude: " << max_amplitude 
+                      << "), applying gain of " << gain << std::endl;
+        }
+        
+        // Apply the gain
+        for (size_t i = 0; i < processed_audio.size(); i++) {
+            padded_audio[i] = processed_audio[i] * gain;
+        }
+    }
+    
+    // Use the padded audio for processing
+    processed_audio = padded_audio;
+    
     if (debug_enabled) {
         std::cout << "Info: Processing " << processed_audio.size() << " audio samples with Whisper" << std::endl;
         
@@ -155,8 +190,8 @@ std::string StreamingWhisperSTT::process_audio(const std::vector<float>& audio_b
                   << ", Avg amplitude: " << avg_amplitude << std::endl;
     }
     
-    // Set up whisper parameters
-    whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
+    // Set up whisper parameters - switch to greedy sampling for more reliable basic transcription
+    whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     wparams.print_realtime = false;
     wparams.print_progress = debug_enabled;
     wparams.print_timestamps = false;
@@ -164,12 +199,19 @@ std::string StreamingWhisperSTT::process_audio(const std::vector<float>& audio_b
     wparams.language = "en"; // Language code for English
     wparams.n_threads = 4;   // Use 4 threads for processing
     
-    // Enhance parameters for better sentence detection
-    wparams.beam_search.beam_size = 5;        // Increase beam size for better search
+    // For our use case, trying to get complete sentences:
     wparams.no_context = false;               // Use context for better continuity
-    wparams.single_segment = true;            // Treat as a single segment
+    wparams.single_segment = false;           // Allow multiple segments for longer sentences
     wparams.max_len = 0;                      // No length limit on transcription
-    wparams.temperature = 0.0f;               // Use greedy decoding for more accuracy
+    wparams.temperature = 0.0f;               // Zero temperature for deterministic output
+    wparams.prompt_tokens = nullptr;          // No prompt tokens
+    wparams.prompt_n_tokens = 0;              // No prompt tokens count
+    
+    // These parameters work better for sentence detection
+    wparams.token_timestamps = false;         // Don't need token timestamps
+    wparams.thold_pt = 0.01f;                 // Lower threshold to catch more words
+    wparams.n_max_text_ctx = 16384;           // Large context size
+    wparams.duration_ms = 0;                  // Process the entire thing at once
     
     // Parse any additional parameters from config
     if (!config.params.empty()) {
