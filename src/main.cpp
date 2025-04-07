@@ -787,6 +787,7 @@ bool is_silence_marker(const std::string& text) {
            lower_text == "[silence]" ||
            lower_text == "[noise]" ||
            lower_text == "[inaudible]" ||
+           lower_text == "[blank_audio]" ||
            lower_text.find("background noise") != std::string::npos ||
            lower_text.find("silence") != std::string::npos;
 }
@@ -949,6 +950,8 @@ bool run_assistant_cycle(AudioInput* audio, WhisperSTT* whisper, OllamaClient* o
                 // Clearly log what was detected
                 if (transcript.empty()) {
                     std::cout << "Empty transcript. Continuing to listen..." << std::endl;
+                } else if (transcript == "[BLANK_AUDIO]" || transcript == "[blank_audio]") {
+                    std::cout << "Detected blank audio. Continuing to listen..." << std::endl;
                 } else {
                     std::cout << "Detected only: '" << transcript << "'. Continuing to listen..." << std::endl;
                 }
