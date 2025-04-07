@@ -788,10 +788,10 @@ bool is_silence_marker(const std::string& text) {
 
 // Process a single transcript and return true if conversation should continue
 bool process_transcript(const std::string& transcript, OllamaClient* ollama, TTSEngine* tts, bool debug) {
-    // We should never process silence markers - this is handled at a higher level
-    if (is_silence_marker(transcript)) {
+    // Safety check: We should never process silence markers or empty transcripts
+    if (transcript.empty() || is_silence_marker(transcript)) {
         if (debug) {
-            std::cout << "Debug: Silence or minimal audio detected. Continuing to listen..." << std::endl;
+            std::cout << "Debug: Empty or silence transcript passed to process_transcript. Skipping processing." << std::endl;
         }
         return true; // Continue listening without responding
     }

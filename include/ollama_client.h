@@ -163,6 +163,12 @@ public:
     
     // Process text with ollama
     std::string process(const std::string& text) {
+        // Safety check - do not process empty text
+        if (text.empty()) {
+            std::cerr << "Error: Attempted to process empty text" << std::endl;
+            return ""; // Return empty response for empty input
+        }
+        
         CURL* curl;
         CURLcode res;
         std::string readBuffer;
@@ -284,9 +290,11 @@ public:
                     std::string processed_text = process_text_for_tts(resp_text);
                     std::cout << "Processed response length: " << processed_text.length() << " characters" << std::endl;
                     
-                    // Add the current exchange to conversation history
-                    conversation_history.push_back(std::make_pair(text, resp_text));
-                    std::cout << "Conversation history now has " << conversation_history.size() << " turns" << std::endl;
+                    // Only add to conversation history if there was actual speech and a valid response
+                    if (!text.empty() && !resp_text.empty()) {
+                        conversation_history.push_back(std::make_pair(text, resp_text));
+                        std::cout << "Conversation history now has " << conversation_history.size() << " turns" << std::endl;
+                    }
                     
                     return processed_text;
                 } else {
