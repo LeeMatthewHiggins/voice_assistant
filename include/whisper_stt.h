@@ -69,6 +69,7 @@ public:
         cmd << config.executable
             << " -f " << audio_file
             << " -m " << model_path
+            << " -nt" // No timestamps
             << " -of txt"; // Explicitly set the output format to text
             
         // Only add verbose flags in debug mode
@@ -76,13 +77,16 @@ public:
             cmd << " -pp" // Enable print progress
                 << " -ps" // Print special tokens
                 << " -pc"; // Print colors
-        } else {
-            cmd << " -nt"; // No timestamps in non-debug mode
         }
             
         // Add any additional parameters
         if (!config.params.empty()) {
             cmd << " " << config.params;
+        }
+        
+        // Add output redirection to suppress stderr if not in debug mode
+        if (!debug) {
+            cmd << " 2>/dev/null";
         }
         
         if (debug) {
@@ -99,9 +103,19 @@ public:
         
         char temp_buffer[1024];
         while (fgets(temp_buffer, sizeof(temp_buffer), pipe) != NULL) {
-            whisper_output += temp_buffer;
+            std::string current_line(temp_buffer);
+            
+            // Skip timing lines and progress information in non-debug mode
+            if (!debug && (current_line.find("whisper_print_timings") != std::string::npos ||
+                          current_line.find("[") == 0 ||  // Progress bar usually starts with [
+                          current_line.find("Progress") != std::string::npos ||
+                          current_line.find("entropy") != std::string::npos)) {
+                continue;
+            }
+            
+            whisper_output += current_line;
             if (debug) {
-                std::cout << temp_buffer; // Only print real-time output in debug mode
+                std::cout << current_line; // Only print real-time output in debug mode
             }
         }
         
