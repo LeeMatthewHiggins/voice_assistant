@@ -114,11 +114,14 @@ You can pass command-line arguments:
 Options:
 - `--config`: Specify a custom config file path
 - `--continuous`: Run in continuous mode (keep listening for commands)
+- `--streaming-mode`: Use real-time audio streaming instead of file-based recording
 - `--input-device`: Specify audio input device (e.g., webcam microphone)
 - `--output-device`: Specify audio output device (e.g., speakers)
 - `--list-devices`: List all available audio input and output devices
 - `--debug`: Run in debug mode with extra diagnostics
 - `--setup`: Run interactive setup to configure model, personality, and voice
+- `--log`, `--enable-logging`: Enable conversation logging to a file
+- `--log-file`: Specify custom log file path (default: timestamp-based filename)
 - `--help`: Show help message
 
 ## Setup Options
@@ -153,6 +156,57 @@ To install all available models at once, run:
 ```
 ./install_models.sh
 ```
+
+## Audio Processing Modes
+
+The voice assistant supports two different audio processing modes:
+
+### 1. File-Based Mode (Default)
+
+In file-based mode, the assistant:
+- Records audio to a temporary file for a fixed duration (default: 5 seconds)
+- Processes the complete file with Whisper after recording finishes
+- Provides the most accurate transcription quality
+- Works best for slower, more deliberate interactions
+
+To use file-based mode:
+```
+./build/voice_assistant
+```
+
+### 2. Streaming Mode
+
+In streaming mode, the assistant:
+- Captures audio continuously in real-time 
+- Uses Voice Activity Detection (VAD) to detect when you're speaking
+- Processes speech immediately when you stop talking
+- Provides a more natural, conversational experience
+- Automatically adjusts to different speech patterns
+- Has no fixed time limit for how long you can speak
+
+To use streaming mode:
+```
+./build/voice_assistant --streaming-mode
+```
+
+Streaming mode can be configured in `config.json` with these parameters:
+```json
+"streaming": {
+  "enabled": true,
+  "vad_threshold": 0.6,
+  "vad_freq_threshold": 100.0,
+  "min_speech_ms": 300,
+  "max_silence_ms": 1000,
+  "padding_ms": 500
+}
+```
+
+These parameters control the VAD (Voice Activity Detection):
+- `vad_threshold`: Energy threshold for detecting speech (0.0-1.0)
+- `vad_freq_threshold`: Frequency threshold for speech vs. background noise
+- `min_speech_ms`: Minimum duration in ms to be considered speech
+- `max_silence_ms`: How long to wait after speech ends before processing
+- `padding_ms`: Extra audio to capture before and after speech
 
 ## Voice-Optimized Responses
 
@@ -251,7 +305,7 @@ Debug mode will:
      ./build/voice_assistant --list-devices
      ./build/voice_assistant --input-device DEVICE_NAME
      ```
-  4. Increase audio recording duration in config.json:
+  4. Increase audio recording duration in config.json (for file-based mode):
      ```json
      "audio": {
        "duration": 10,
@@ -262,6 +316,18 @@ Debug mode will:
      ```json
      "whisper": {
        "model": "tiny.en",
+       ...
+     }
+     ```
+  6. Try switching to streaming mode, which can be more responsive:
+     ```
+     ./build/voice_assistant --streaming-mode
+     ```
+  7. Adjust VAD parameters for streaming mode if speech isn't being detected properly:
+     ```json
+     "streaming": {
+       "vad_threshold": 0.4,  # Lower threshold for more sensitivity
+       "min_speech_ms": 200,  # Detect shorter speech segments
        ...
      }
      ```

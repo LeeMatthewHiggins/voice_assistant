@@ -18,6 +18,13 @@
 #include "tts_engine.h"
 #include "config.h"
 
+// Include streaming components if enabled
+#ifdef ENABLE_STREAMING
+#include "streaming_audio_input.h"
+#include "streaming_whisper_stt.h"
+#include "vad.h"
+#endif
+
 // Global flag for handling Ctrl+C - this is referenced in other files via extern
 volatile sig_atomic_t g_running = 1;
 
@@ -37,6 +44,156 @@ bool run_assistant_cycle(AudioInput* audio, WhisperSTT* whisper, OllamaClient* o
 void run_diagnostics(AudioConfig& audio_config, WhisperConfig& whisper_config);
 void gather_system_info(SystemInfo& info);
 void log_conversation(const std::string& log_file, const std::string& speaker, const std::string& message);
+
+// Forward declarations
+bool run_streaming_assistant_cycle(StreamingAudioInput* audio, StreamingWhisperSTT* whisper, OllamaClient* ollama, TTSEngine* tts, bool debug, const std::string& log_file = "");
+bool is_silence_marker(const std::string& text);
+bool has_exit_keyword(const std::string& text);
+bool has_over_keyword(const std::string& text);
+
+// Implementation of streaming assistant cycle
+bool run_streaming_assistant_cycle(StreamingAudioInput* audio, StreamingWhisperSTT* whisper, OllamaClient* ollama, TTSEngine* tts, bool debug, const std::string& log_file) {
+    bool should_exit = false;
+    int silence_counter = 0;
+    const int max_silence_turns = 3; // Exit after this many consecutive silent turns
+    
+    // Make sure the audio capture is started
+    if (!audio->start()) {
+        std::cerr << "Error: Failed to start audio capture" << std::endl;
+        return true; // Signal that we should exit
+    }
+    
+    // Pass the running flag pointer to the whisper engine for interrupt handling
+    whisper->set_running_flag(&g_running);
+    
+    while (g_running && !should_exit) {
+        std::cout << "\nListening... (press Ctrl+C to stop)" << std::endl;
+        
+        // Wait for speech with a timeout
+        std::vector<float> speech_audio = audio->wait_for_speech(10000); // 10 second timeout
+        
+        // Check if the global running flag was set to 0 by the signal handler
+        if (!g_running) {
+            std::cout << "Ctrl+C detected. Exiting..." << std::endl;
+            audio->stop();
+            return true; // Signal that the app should exit
+        }
+        
+        if (speech_audio.empty()) {
+            std::cout << "No speech detected. Continuing to listen..." << std::endl;
+            
+            // Count consecutive silent turns
+            silence_counter++;
+            if (silence_counter >= max_silence_turns) {
+                std::cout << "Multiple silent turns detected. Ending conversation." << std::endl;
+                audio->stop();
+                break;
+            }
+            
+            continue; // Try again
+        }
+        
+        // Reset the silence counter since we detected speech
+        silence_counter = 0;
+        
+        // Process the audio with whisper
+        std::cout << "Transcribing..." << std::endl;
+        std::string transcript = whisper->process_audio(speech_audio, audio->get_sample_rate());
+        
+        // Check again after transcription in case Ctrl+C was pressed during processing
+        if (!g_running) {
+            std::cout << "Ctrl+C detected. Exiting..." << std::endl;
+            audio->stop();
+            return true; // Signal that the app should exit
+        }
+        
+        // Check if transcript is empty or a silence marker
+        if (transcript.empty() || is_silence_marker(transcript)) {
+            std::cout << "Empty transcript or silence marker detected. Continuing to listen..." << std::endl;
+            continue;
+        }
+        
+        // Display what was heard
+        std::cout << "\n------------------------------" << std::endl;
+        std::cout << "You said: " << transcript << std::endl;
+        std::cout << "------------------------------" << std::endl;
+        
+        // Log the conversation if enabled
+        if (!log_file.empty()) {
+            log_conversation(log_file, "User", transcript);
+        }
+        
+        // Check for exit keywords before processing
+        if (has_exit_keyword(transcript)) {
+            std::cout << "Exit keyword detected. Ending conversation and exiting." << std::endl;
+            // Say goodbye
+            std::string goodbye = "Goodbye. Exiting voice assistant.";
+            std::cout << "\n------------------------------" << std::endl;
+            std::cout << "Vibe: " << goodbye << std::endl;
+            std::cout << "------------------------------" << std::endl;
+            
+            // Log the farewell if enabled
+            if (!log_file.empty()) {
+                log_conversation(log_file, "Vibe", goodbye);
+            }
+            
+            tts->speak(goodbye);
+            should_exit = true;
+            break;
+        }
+        
+        // Process with Ollama
+        if (debug) {
+            std::cout << "Info: Processing with Ollama..." << std::endl;
+        }
+        
+        // Remove "over" from the end of the transcript for processing
+        std::string clean_transcript = transcript;
+        size_t over_pos = clean_transcript.find(" over");
+        if (over_pos != std::string::npos && over_pos > 0 && 
+            (over_pos + 5 >= clean_transcript.length() || 
+             clean_transcript[over_pos + 5] == '.' || 
+             clean_transcript[over_pos + 5] == '!' ||
+             clean_transcript[over_pos + 5] == '?')) {
+            clean_transcript = clean_transcript.substr(0, over_pos);
+        }
+        
+        std::string response = ollama->process(clean_transcript);
+        
+        // Display output in chat format
+        std::cout << "\n------------------------------" << std::endl;
+        std::cout << "Vibe: " << response << std::endl;
+        std::cout << "------------------------------" << std::endl;
+        
+        // Log the conversation if enabled
+        if (!log_file.empty()) {
+            log_conversation(log_file, "Vibe", response);
+        }
+        
+        // Convert to speech
+        if (debug) {
+            std::cout << "Info: Converting to speech..." << std::endl;
+        }
+        tts->speak(response);
+        
+        // Check if the user said "over" to indicate conversation should continue
+        if (!has_over_keyword(transcript)) {
+            // If no "over" was detected, end the conversation (unless in continuous mode)
+            should_exit = true;
+        }
+        
+        // Small delay before next cycle
+        // Check for interrupt during the delay
+        for (int i = 0; i < 5 && g_running; i++) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+    
+    // Stop audio capture
+    audio->stop();
+    
+    return should_exit;
+}
 
 // Interactive setup function
 void run_interactive_setup(Config& config) {
@@ -170,6 +327,7 @@ int main(int argc, char** argv) {
     bool debug_mode = false;
     bool setup_mode = false;
     bool enable_logging = false;
+    bool streaming_mode = false;
     
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
@@ -193,6 +351,8 @@ int main(int argc, char** argv) {
         } else if (arg == "--log-file" && i + 1 < argc) {
             log_file_path = argv[++i];
             enable_logging = true;
+        } else if (arg == "--streaming-mode") {
+            streaming_mode = true;
         } else if (arg == "--help") {
             std::cout << "Usage: voice_assistant [options]\n"
                       << "Options:\n"
@@ -205,6 +365,7 @@ int main(int argc, char** argv) {
                       << "  --setup               Run interactive setup to configure the assistant\n"
                       << "  --log, --enable-logging  Enable conversation logging to a file\n"
                       << "  --log-file PATH       Specify log file path (default: conversation_log.txt)\n" 
+                      << "  --streaming-mode      Enable real-time audio streaming mode\n"
                       << "  --help                Show this help message\n\n"
                       << "Voice commands:\n"
                       << "  \"over\"               Signal the end of your turn in a conversation\n"
@@ -279,11 +440,40 @@ int main(int argc, char** argv) {
     std::string system_info_str = detailed_info.str();
     std::cout << "\nSystem Information:\n" << system_info_str << std::endl;
     
-    // Initialize components
-    std::unique_ptr<AudioInput> audio = std::make_unique<AudioInput>(config.audio, continuous_mode, debug_mode);
-    std::unique_ptr<WhisperSTT> whisper = std::make_unique<WhisperSTT>(config.whisper);
+    // Initialize Ollama and TTS components (common to both modes)
     std::unique_ptr<OllamaClient> ollama = std::make_unique<OllamaClient>(config.ollama, system_info_str);
     std::unique_ptr<TTSEngine> tts = std::make_unique<TTSEngine>(config.tts);
+    
+    // Initialize mode-specific components
+    // Streaming mode components
+    std::unique_ptr<StreamingAudioInput> streaming_audio;
+    std::unique_ptr<StreamingWhisperSTT> streaming_whisper;
+    
+    // File-based components
+    std::unique_ptr<AudioInput> audio;
+    std::unique_ptr<WhisperSTT> whisper;
+    
+    // Initialize appropriate components based on mode
+    if (streaming_mode) {
+        // Set up streaming components
+        streaming_audio = std::make_unique<StreamingAudioInput>(config.audio, debug_mode);
+        streaming_whisper = std::make_unique<StreamingWhisperSTT>(config.whisper, debug_mode);
+        
+        // Set VAD parameters if defined in config
+        if (config.streaming.enabled) {
+            VADParams vad_params;
+            vad_params.threshold = config.streaming.vad_threshold;
+            vad_params.freq_threshold = config.streaming.vad_freq_threshold;
+            vad_params.min_speech_ms = config.streaming.min_speech_ms;
+            vad_params.max_silence_ms = config.streaming.max_silence_ms;
+            vad_params.padding_ms = config.streaming.padding_ms;
+            streaming_audio->set_vad_params(vad_params);
+        }
+    } else {
+        // Set up file-based components
+        audio = std::make_unique<AudioInput>(config.audio, continuous_mode, debug_mode);
+        whisper = std::make_unique<WhisperSTT>(config.whisper);
+    }
     
     if (debug_mode) {
         std::cout << "Info: Vibe Voice Assistant Configuration:" << std::endl;
@@ -293,6 +483,12 @@ int main(int argc, char** argv) {
         std::cout << "Info: - Audio input device: " << config.audio.device << std::endl;
         std::cout << "Info: - Audio output device: " << config.tts.output_device << std::endl;
         std::cout << "Info: - Current time: " << config.system_info.current_time << std::endl;
+        
+    if (streaming_mode) {
+        std::cout << "Info: - Mode: Streaming (real-time) audio" << std::endl;
+    } else {
+        std::cout << "Info: - Mode: File-based audio" << std::endl;
+    }
         
         // Display hardware info
         if (!config.system_info.cpu_info.empty()) 
@@ -310,13 +506,13 @@ int main(int argc, char** argv) {
         return 0;
     }
     
-    // Run diagnostics in debug mode
-    if (debug_mode) {
+    // Run diagnostics in debug mode (only for file-based mode)
+    if (debug_mode && !streaming_mode) {
         run_diagnostics(config.audio, config.whisper);
     }
     
     // Increase recording duration in debug mode to give more time to speak
-    if (debug_mode && config.audio.duration < 8) {
+    if (debug_mode && !streaming_mode && config.audio.duration < 8) {
         std::cout << "Debug: Increasing recording duration from " << config.audio.duration 
                   << " to 8 seconds for better results" << std::endl;
         config.audio.duration = 8;
@@ -348,7 +544,22 @@ int main(int argc, char** argv) {
     }
 
     // Main loop
+    if (streaming_mode) {
+        // Run in streaming mode
+        std::cout << "Info: Running in streaming mode. Press Ctrl+C to exit or say 'exit', 'quit', 'goodbye', or 'end conversation'." << std::endl;
+        std::cout << "\n--- Starting Conversation ---\n" << std::endl;
+        
+        bool should_exit = run_streaming_assistant_cycle(
+            streaming_audio.get(), 
+            streaming_whisper.get(), 
+            ollama.get(), 
+            tts.get(), 
+            debug_mode, 
+            enable_logging ? log_file_path : ""
+        );
+    } else
     if (continuous_mode) {
+        // Run in continuous file-based mode
         std::cout << "Info: Running in continuous mode. Press Ctrl+C to exit or say 'exit', 'quit', 'goodbye', or 'end conversation'." << std::endl;
         std::cout << "\n--- Starting Conversation ---\n" << std::endl;
         
@@ -358,6 +569,7 @@ int main(int argc, char** argv) {
                                              enable_logging ? log_file_path : "");
         }
     } else {
+        // Run in single-cycle file-based mode
         std::cout << "Info: Press Ctrl+C to exit or say 'exit', 'quit', 'goodbye', or 'end conversation'." << std::endl;
         std::cout << "\n--- Starting Conversation ---\n" << std::endl;
         run_assistant_cycle(audio.get(), whisper.get(), ollama.get(), tts.get(), debug_mode,

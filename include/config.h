@@ -199,6 +199,16 @@ struct SystemInfo {
     }
 };
 
+// Streaming audio configuration
+struct StreamingConfig {
+    bool enabled = false;
+    float vad_threshold = 0.6f;
+    float vad_freq_threshold = 100.0f;
+    int min_speech_ms = 300;
+    int max_silence_ms = 1000;
+    int padding_ms = 500;
+};
+
 // Main configuration
 class Config {
 public:
@@ -207,6 +217,7 @@ public:
     OllamaConfig ollama;
     TTSConfig tts;
     SystemInfo system_info;
+    StreamingConfig streaming;
     
     // Static instances of available options
     static AvailableModels available_models;
@@ -251,6 +262,16 @@ public:
             if (j["tts"].contains("speed")) tts.speed = j["tts"]["speed"];
             if (j["tts"].contains("output_device")) tts.output_device = j["tts"]["output_device"];
         }
+        
+        // Parse streaming config
+        if (j.contains("streaming")) {
+            if (j["streaming"].contains("enabled")) streaming.enabled = j["streaming"]["enabled"];
+            if (j["streaming"].contains("vad_threshold")) streaming.vad_threshold = j["streaming"]["vad_threshold"];
+            if (j["streaming"].contains("vad_freq_threshold")) streaming.vad_freq_threshold = j["streaming"]["vad_freq_threshold"];
+            if (j["streaming"].contains("min_speech_ms")) streaming.min_speech_ms = j["streaming"]["min_speech_ms"];
+            if (j["streaming"].contains("max_silence_ms")) streaming.max_silence_ms = j["streaming"]["max_silence_ms"];
+            if (j["streaming"].contains("padding_ms")) streaming.padding_ms = j["streaming"]["padding_ms"];
+        }
     }
     
     // Create default configuration
@@ -280,6 +301,13 @@ public:
         j["tts"]["speed"] = tts.speed;
         j["tts"]["output_device"] = tts.output_device;
         
+        j["streaming"]["enabled"] = streaming.enabled;
+        j["streaming"]["vad_threshold"] = streaming.vad_threshold;
+        j["streaming"]["vad_freq_threshold"] = streaming.vad_freq_threshold;
+        j["streaming"]["min_speech_ms"] = streaming.min_speech_ms;
+        j["streaming"]["max_silence_ms"] = streaming.max_silence_ms;
+        j["streaming"]["padding_ms"] = streaming.padding_ms;
+        
         // Write to file
         std::ofstream file(filename);
         if (!file.is_open()) {
@@ -304,9 +332,7 @@ public:
     }
 };
 
-// Initialize static members
-AvailableModels Config::available_models;
-AvailablePersonalities Config::available_personalities;
-AvailableVoices Config::available_voices;
+// Static members are declared here but defined in src/config.cpp
+// to avoid multiple definition errors
 
 #endif // CONFIG_H
