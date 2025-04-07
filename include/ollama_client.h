@@ -41,9 +41,15 @@ private:
         std::regex inline_code_regex("`([^`]+)`");
         result = std::regex_replace(result, inline_code_regex, "$1");
         
-        // Handle bullet points
-        replace_all(result, "* ", "• ");
-        replace_all(result, "- ", "• ");
+        // Convert bullet points to complete sentences
+        std::regex bulletPointLine("^\\s*[\\*\\-•]\\s*(.+?)$");
+        std::string bulletReplacement = "Point: $1. ";
+        result = std::regex_replace(result, bulletPointLine, bulletReplacement);
+        
+        // Replace remaining bullet characters
+        replace_all(result, "* ", "Point: ");
+        replace_all(result, "- ", "Point: ");
+        replace_all(result, "• ", "Point: ");
         
         // Replace URLs with more speech-friendly text
         std::regex url_regex("https?://\\S+");
@@ -53,21 +59,25 @@ private:
         std::regex link_regex("\\[([^\\]]+)\\]\\([^\\)]+\\)");
         result = std::regex_replace(result, link_regex, "$1");
         
-        // Remove heading formatting
+        // Replace heading formatting with spoken phrases
         std::regex h1_regex("# ([^\n]+)");
-        result = std::regex_replace(result, h1_regex, "$1:");
+        result = std::regex_replace(result, h1_regex, "Main topic: $1. ");
         
         std::regex h2_regex("## ([^\n]+)");
-        result = std::regex_replace(result, h2_regex, "$1:");
+        result = std::regex_replace(result, h2_regex, "Subtopic: $1. ");
         
         std::regex h3_regex("### ([^\n]+)");
-        result = std::regex_replace(result, h3_regex, "$1:");
+        result = std::regex_replace(result, h3_regex, "Section: $1. ");
         
         // Remove bold and italic formatting
         replace_all(result, "**", "");
         replace_all(result, "__", "");
         replace_all(result, "*", "");
         replace_all(result, "_", "");
+        
+        // Replace colons in text with spoken language
+        std::regex colonPattern("([^:]):([^:]|$)");
+        result = std::regex_replace(result, colonPattern, "$1 is $2");
         
         // Replace newlines with spaces for better flow in speech
         replace_all(result, "\n\n", ". ");
@@ -109,6 +119,20 @@ private:
         replace_all(result, "/", " divided by ");
         replace_all(result, ">", " greater than ");
         replace_all(result, "<", " less than ");
+        
+        // Replace common emojis with spoken descriptions
+        replace_all(result, "😊", " smiling face ");
+        replace_all(result, "👍", " thumbs up ");
+        replace_all(result, "👎", " thumbs down ");
+        replace_all(result, "❤️", " heart ");
+        replace_all(result, "👋", " waving hand ");
+        replace_all(result, "🙂", " slightly smiling face ");
+        replace_all(result, "😀", " grinning face ");
+        replace_all(result, "🤖", " robot face ");
+        replace_all(result, "✅", " check mark ");
+        replace_all(result, "⚠️", " warning ");
+        replace_all(result, "⭐", " star ");
+        replace_all(result, "🚀", " rocket ");
         
         return result;
     }
@@ -207,6 +231,13 @@ public:
                                     "1. Whisper speech-to-text engine to convert user's voice to text\n"
                                     "2. Ollama for language model processing (you are the language model part)\n" 
                                     "3. ESpeak text-to-speech for converting your responses to speech\n\n"
+                                    "Since your responses will be read aloud by a text-to-speech system, follow these guidelines:\n"
+                                    "1. Use complete sentences with natural phrasing\n"
+                                    "2. Never use bullet points with symbols like *, -, or •. Instead, start with phrases like 'First point,' 'Second point,' etc.\n"
+                                    "3. Avoid using colons in your responses - use complete sentences instead\n"
+                                    "4. Never use emojis or special characters that can't be read aloud naturally\n"
+                                    "5. Keep responses concise and directly address the user's question\n"
+                                    "6. Avoid technical jargon or complex terminology\n\n"
                                     "When the user asks about you or your hardware, explain in simple, conversational terms without long model numbers or technical jargon. "
                                     "Always use first person when referring to yourself ('I am...').\n\n"
                                     "Here is your system information (keep descriptions brief and user-friendly when speaking about this): \n"

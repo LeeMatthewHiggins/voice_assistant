@@ -884,8 +884,10 @@ bool process_transcript(const std::string& transcript, OllamaClient* ollama, TTS
     }
     std::string response = ollama->process(clean_transcript);
     
-    // Display output in chat format
+    // Display output in chat format with separator line
+    std::cout << "\n------------------------------" << std::endl;
     std::cout << "Vibe: " << response << std::endl;
+    std::cout << "------------------------------" << std::endl;
     
     // Convert to speech
     if (debug) {
@@ -992,7 +994,9 @@ bool run_assistant_cycle(AudioInput* audio, WhisperSTT* whisper, OllamaClient* o
                                     std::cout << "Exit keyword detected. Ending conversation and exiting." << std::endl;
                                     // Say goodbye
                                     std::string goodbye = "Goodbye. Exiting voice assistant.";
-                                    std::cout << "Assistant: " << goodbye << std::endl;
+                                    std::cout << "\n------------------------------" << std::endl;
+                                    std::cout << "Vibe: " << goodbye << std::endl;
+                                    std::cout << "------------------------------" << std::endl;
                                     tts->speak(goodbye);
                                     should_exit = true;
                                     break;
@@ -1057,14 +1061,18 @@ bool run_assistant_cycle(AudioInput* audio, WhisperSTT* whisper, OllamaClient* o
         
         // If we have actual speech content to process
         if (has_speech) {
+            std::cout << "\n------------------------------" << std::endl;
             std::cout << "You said: " << transcript << std::endl;
+            std::cout << "------------------------------" << std::endl;
             
             // Check for exit keywords before processing
             if (has_exit_keyword(transcript)) {
                 std::cout << "Exit keyword detected. Ending conversation and exiting." << std::endl;
                 // Say goodbye
                 std::string goodbye = "Goodbye. Exiting voice assistant.";
-                std::cout << "Assistant: " << goodbye << std::endl;
+                std::cout << "\n------------------------------" << std::endl;
+                std::cout << "Vibe: " << goodbye << std::endl;
+                std::cout << "------------------------------" << std::endl;
                 tts->speak(goodbye);
                 should_exit = true;
                 break;
