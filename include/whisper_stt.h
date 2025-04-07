@@ -23,7 +23,7 @@ public:
     }
     
     // Transcribe audio using whisper.cpp
-    std::string transcribe(const std::string& audio_file, bool debug = false) {
+    std::string transcribe(const std::string& audio_file, bool debug = false, volatile sig_atomic_t* running_flag = nullptr) {
         // Check if whisper executable exists
         if (!fs::exists(config.executable)) {
             std::cerr << "Whisper executable not found at " << config.executable << std::endl;
@@ -117,6 +117,12 @@ public:
         }
         
         int result = pclose(pipe);
+        
+        // Check if we've been interrupted (if running_flag was provided)
+        if (running_flag && !(*running_flag)) {
+            std::cout << "Transcription interrupted by Ctrl+C." << std::endl;
+            return "";
+        }
         
         if (result != 0) {
             std::cerr << "Error running whisper.cpp (exit code: " << result << ")" << std::endl;

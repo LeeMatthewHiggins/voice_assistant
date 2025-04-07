@@ -26,8 +26,8 @@ void signal_handler(int signal) {
         std::cout << "\nShutting down immediately..." << std::endl;
         g_running = 0;
         
-        // Kill any active recording processes immediately
-        std::system("pkill -f arecord 2>/dev/null; pkill -f parecord 2>/dev/null; pkill -f play 2>/dev/null; pkill -f espeak 2>/dev/null");
+        // Kill any active recording and processing processes immediately
+        std::system("pkill -f arecord 2>/dev/null; pkill -f parecord 2>/dev/null; pkill -f play 2>/dev/null; pkill -f espeak 2>/dev/null; pkill -f whisper-cli 2>/dev/null");
     }
 }
 
@@ -911,6 +911,13 @@ bool run_assistant_cycle(AudioInput* audio, WhisperSTT* whisper, OllamaClient* o
         
         // Record audio
         std::string audio_file = audio->record();
+        
+        // Check if the global running flag was set to 0 by the signal handler
+        if (!g_running) {
+            std::cout << "Ctrl+C detected. Exiting..." << std::endl;
+            return true; // Signal that the app should exit
+        }
+        
         if (audio_file.empty()) {
             std::cerr << "Failed to record audio." << std::endl;
             
@@ -944,7 +951,21 @@ bool run_assistant_cycle(AudioInput* audio, WhisperSTT* whisper, OllamaClient* o
         
         // Transcribe audio
         std::cout << "Transcribing..." << std::endl;
-        std::string transcript = whisper->transcribe(audio_file, debug);
+        
+        // Check again if Ctrl+C was pressed during recording
+        if (!g_running) {
+            std::cout << "Ctrl+C detected. Exiting..." << std::endl;
+            return true; // Signal that the app should exit
+        }
+        
+        std::string transcript = whisper->transcribe(audio_file, debug, &g_running);
+        
+        // Check again after transcription in case Ctrl+C was pressed during transcribing
+        if (!g_running) {
+            std::cout << "Ctrl+C detected. Exiting..." << std::endl;
+            return true; // Signal that the app should exit
+        }
+        
         bool has_speech = false;
         
         // Check if transcript is empty or a silence marker
